@@ -15,6 +15,12 @@ struct MeetingSpeakerObservationBatch: Sendable {
 }
 
 @MainActor final class GoogleMeetSpeakerObservationProvider: MeetingSpeakerObservationProvider {
+    struct CaptureWindow: Sendable {
+        var id: CGWindowID
+        var processID: pid_t?
+        var frame: CGRect
+    }
+
     private let reader = MeetingParticipantAccessibilityReader()
     private let frames = MeetingSpeakerFrameSource()
     private let monitor = MeetingSpeakerSourceMonitor()
@@ -59,6 +65,21 @@ struct MeetingSpeakerObservationBatch: Sendable {
                 .sorted { "\($0.name)|\($0.frame)" < "\($1.name)|\($1.frame)" }
         }
         return stable(before) == stable(after)
+    }
+
+    /// AX and ScreenCaptureKit do not share a window-title contract. Associate
+    /// their windows by process and the complete frame, requiring uniqueness.
+    /// The selected Meet URL and privacy checks are revalidated after capture.
+    nonisolated static func captureWindowID(snapshot: MeetingParticipantSnapshot, windows: [CaptureWindow]) -> CGWindowID? {
+        let frame = snapshot.windowFrame
+        guard frame.minX.isFinite, frame.minY.isFinite, frame.width.isFinite, frame.height.isFinite,
+              frame.width > 0, frame.height > 0 else { return nil }
+        let matching = windows.filter {
+            $0.processID == snapshot.processID
+                && abs($0.frame.minX - frame.minX) < 3 && abs($0.frame.minY - frame.minY) < 3
+                && abs($0.frame.width - frame.width) < 3 && abs($0.frame.height - frame.height) < 3
+        }
+        return matching.count == 1 ? matching.first?.id : nil
     }
 
     private func unavailable(_ issue: SpeakerObservationIssue, source: String = "") async -> MeetingSpeakerObservationBatch {
@@ -108,12 +129,11 @@ struct MeetingSpeakerObservationBatch: Sendable {
             }
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-                let matching = content.windows.filter {
-                    $0.owningApplication?.processID == app.processIdentifier && $0.title == before.title
-                        && abs($0.frame.minX - before.windowFrame.minX) < 3 && abs($0.frame.minY - before.windowFrame.minY) < 3
-                        && abs($0.frame.width - before.windowFrame.width) < 3
+                let candidates = content.windows.map {
+                    CaptureWindow(id: $0.windowID, processID: $0.owningApplication?.processID, frame: $0.frame)
                 }
-                guard matching.count == 1, let window = matching.first else { return await unavailable(.windowChanged) }
+                guard let windowID = Self.captureWindowID(snapshot: before, windows: candidates),
+                      let window = content.windows.first(where: { $0.windowID == windowID }) else { return await unavailable(.windowChanged) }
                 try await frames.start(window: window)
                 guard let frame = frames.frame(), frame.hostTime > lastFrameTime,
                       abs(RecordingAudioClock.now - frame.hostTime) < 0.75 else {

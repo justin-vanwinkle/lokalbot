@@ -2,6 +2,43 @@ import XCTest
 @testable import LokalBot
 
 final class CalendarParticipantIdentityTests: XCTestCase {
+    func testMissingCalendarNamesOfferEditableEmailSuggestionsWithoutChangingMetadata() throws {
+        for (address, expected) in [
+            ("ana@example.com", "Ana"),
+            ("ana.petrovic+meetings@example.com", "Ana Petrovic"),
+            ("alex_kim@example.com", "Alex Kim"),
+            ("jean-luc@example.com", "Jean Luc"),
+        ] {
+            let guest = try XCTUnwrap(CalendarParticipantIdentity(id: "guest", name: nil, emailAddress: address))
+            XCTAssertEqual(guest.suggestedSpeakerName, expected)
+            XCTAssertNil(guest.name)
+            let encoded = try JSONEncoder().encode(guest)
+            let restored = try JSONDecoder().decode(CalendarParticipantIdentity.self, from: encoded)
+            XCTAssertEqual(restored, guest)
+            XCTAssertNil(restored.name)
+            XCTAssertEqual(restored.suggestedSpeakerName, expected)
+            XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("suggestedSpeakerName"))
+        }
+    }
+
+    func testDisplayNamesWinAndAmbiguousMailboxHandlesNeedManualNames() throws {
+        let named = try XCTUnwrap(CalendarParticipantIdentity(name: "Ana Petrović", emailAddress: "alias@example.com"))
+        XCTAssertEqual(named.suggestedSpeakerName, "Ana Petrović")
+        for address in ["support@example.com", "no-reply@example.com", "room123@example.com",
+                        "a9b81c7d@example.com", "a@example.com", "person=alias@example.com"] {
+            let guest = try XCTUnwrap(CalendarParticipantIdentity(name: nil, emailAddress: address))
+            XCTAssertNil(guest.suggestedSpeakerName, address)
+        }
+    }
+
+    func testSameSuggestedNameDoesNotMergeDistinctGuests() throws {
+        let first = try XCTUnwrap(CalendarParticipantIdentity(id: "one", name: nil, emailAddress: "ana@one.example"))
+        let second = try XCTUnwrap(CalendarParticipantIdentity(id: "two", name: nil, emailAddress: "ana@two.example"))
+        let guests = CalendarParticipantIdentity.normalized([first, second])
+        XCTAssertEqual(guests.map(\.suggestedSpeakerName), ["Ana", "Ana"])
+        XCTAssertEqual(guests.map(\.id), ["one", "two"])
+    }
+
     func testExtractsAndNormalizesMailtoAddress() {
         XCTAssertEqual(
             CalendarParticipantIdentity.emailAddress(

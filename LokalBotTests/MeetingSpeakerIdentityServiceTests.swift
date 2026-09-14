@@ -61,6 +61,29 @@ import XCTest
         XCTAssertEqual(service.applyingLatestDecision(to: automatic, meetingID: meeting.id).speakerAliases["them"], "Sam")
     }
 
+    func testCalendarEmailSuggestionRequiresConfirmationAndSurvivesReprocessingWithoutVisualEvidence() async throws {
+        let (recording, audio, transcript, turns, samples) = try await fixture(visual: false)
+        var meeting = recording
+        let guest = try XCTUnwrap(CalendarParticipantIdentity(id: "calendar-ana", name: nil, emailAddress: "ana@example.com"))
+        meeting.calendarParticipantIdentities = [guest]
+        settings.identifySpeakersFromVisuals = false
+        settings.rememberSpeakersOnMac = false
+        let automatic = await service.process(transcript: transcript, meeting: meeting, turns: turns, samples: samples, audioURL: audio)
+        XCTAssertTrue(automatic.speakerAliases.isEmpty)
+
+        let chosen = try await service.choose(.init(label: "them", name: guest.suggestedSpeakerName,
+            calendarIdentityID: guest.id, remember: false), meeting: meeting, transcript: automatic)
+        XCTAssertEqual(chosen.speakerAliases["them"], "Ana")
+        XCTAssertEqual(chosen.speakerCalendarIdentityIDs["them"], guest.id)
+        XCTAssertFalse(chosen.markdown.contains("ana@example.com"))
+
+        let reprocessed = await service.process(transcript: transcript, meeting: meeting, turns: turns, samples: samples, audioURL: audio)
+        XCTAssertEqual(reprocessed.speakerAliases["them"], "Ana")
+        XCTAssertEqual(reprocessed.speakerCalendarIdentityIDs["them"], guest.id)
+        let profiles = try await service.profiles(managing: true)
+        XCTAssertTrue(profiles.isEmpty)
+    }
+
     func testResetSuppressesReapplicationUntilExplicitResume() async throws {
         let (meeting, audio, transcript, turns, samples) = try await fixture(visual: true)
         let automatic = await service.process(transcript: transcript, meeting: meeting, turns: turns, samples: samples, audioURL: audio)

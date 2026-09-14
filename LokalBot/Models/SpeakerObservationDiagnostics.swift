@@ -40,16 +40,28 @@ struct SpeakerObservationDiagnostics: Codable, Equatable, Sendable {
     var maximumTileCount = 0
     var intervals = 0
     var coveredSeconds: Double = 0
+    var visualObservationAttempts: Int?
     var issues: [String: Int] = [:]
     var lastIssue: SpeakerObservationIssue?
+
+    var missingSpeakerNamesExplanation: String? {
+        // Older sessions did not record the toggle. Only visual-only failures
+        // establish that naming was attempted in those sessions.
+        let legacyAttempts = [SpeakerObservationIssue.layoutUnavailable, .screenPermission, .windowChanged,
+                              .waitingForFrame, .frameUnavailable].reduce(0) { $0 + issues[$1.rawValue, default: 0] }
+        guard (visualObservationAttempts ?? legacyAttempts) > 0, observations > 0,
+              intervals == 0, coveredSeconds == 0 else { return nil }
+        return "No usable speaker observations were captured. You can name voices in the transcript; processing this recording again cannot recover the missing visual evidence."
+    }
 
     mutating func record(_ issue: SpeakerObservationIssue) {
         issues[issue.rawValue, default: 0] += 1
         lastIssue = issue
     }
 
-    mutating func record(_ batch: MeetingSpeakerObservationBatch, interval: SpeakerActivityInterval?) {
+    mutating func record(_ batch: MeetingSpeakerObservationBatch, interval: SpeakerActivityInterval?, visual: Bool = true) {
         observations += 1
+        visualObservationAttempts = (visualObservationAttempts ?? 0) + (visual ? 1 : 0)
         maximumTileCount = max(maximumTileCount, batch.observations.count)
         if !batch.observations.isEmpty { batchesWithTiles += 1 }
         if let issue = batch.issue { record(issue) } else if batch.reason != nil { record(.providerUnavailable) } else if let interval {

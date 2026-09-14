@@ -10,6 +10,26 @@ struct CalendarParticipantIdentity: Codable, Equatable, Hashable, Identifiable, 
     let name: String?
     let emailAddress: String?
 
+    /// An editable picker suggestion, never an automatic speaker identity.
+    /// EventKit often supplies an address without a display name. Keep that
+    /// absence in metadata so automatic naming cannot treat this guess as fact.
+    var suggestedSpeakerName: String? {
+        if let name { return name }
+        guard let address = emailAddress,
+              let localPart = address.split(separator: "@").first?.split(separator: "+").first else { return nil }
+        let words = localPart.split(whereSeparator: { ".-_".contains($0) })
+        guard (1...4).contains(words.count),
+              words.allSatisfy({ (1...24).contains($0.count) && $0.allSatisfy(\.isLetter) }) else { return nil }
+        let mailbox = words.joined().lowercased()
+        let sharedMailboxes: Set<String> = [
+            "admin", "all", "calendar", "contact", "events", "hello", "info", "mail",
+            "noreply", "notifications", "office", "reception", "room", "sales", "support", "team",
+            "me", "you", "everyone", "presentation", "presenting", "sharedroom"
+        ]
+        guard !sharedMailboxes.contains(mailbox) else { return nil }
+        return Self.normalizedDisplayName(words.map { String($0).capitalized }.joined(separator: " "))
+    }
+
     init?(id: String = UUID().uuidString, name: String?, emailAddress: String?) {
         let normalizedName = name.flatMap(Self.normalizedDisplayName)
         let normalizedEmail = emailAddress.flatMap(Self.normalizedEmailAddress)

@@ -108,6 +108,35 @@ final class MeetingSpeakerObservationTests: XCTestCase {
         XCTAssertFalse(GoogleMeetSpeakerObservationProvider.sameLayout([alice], [changedName]))
     }
 
+    func testCaptureWindowUsesUniqueProcessAndFullFrameInsteadOfCrossAPITitleEquality() {
+        var snapshot = MeetingParticipantSnapshot(processID: 42, title: "Meet - Example - Google Chrome",
+            url: "https://meet.google.com/abc-defg-hij", windowFrame: .init(x: -1200, y: 40, width: 1100, height: 800),
+            tiles: [], hostStart: 100, hostEnd: 100.1)
+        let window = GoogleMeetSpeakerObservationProvider.CaptureWindow(id: 7, processID: 42, frame: snapshot.windowFrame)
+        var unrelated = window; unrelated.id = 8; unrelated.processID = 43
+        XCTAssertEqual(GoogleMeetSpeakerObservationProvider.captureWindowID(snapshot: snapshot, windows: [unrelated, window]), 7)
+        snapshot.title = "Meet - Example"
+        XCTAssertEqual(GoogleMeetSpeakerObservationProvider.captureWindowID(snapshot: snapshot, windows: [window]), 7)
+        var rounded = window; rounded.frame.origin.x += 1; rounded.frame.size.height -= 1
+        XCTAssertEqual(GoogleMeetSpeakerObservationProvider.captureWindowID(snapshot: snapshot, windows: [rounded]), 7)
+    }
+
+    func testCaptureWindowRejectsAmbiguousMissingAndDifferentSizedWindows() {
+        let snapshot = MeetingParticipantSnapshot(processID: 42, title: "Meet",
+            url: "https://meet.google.com/abc-defg-hij", windowFrame: .init(x: 0, y: 0, width: 1100, height: 800),
+            tiles: [], hostStart: 100, hostEnd: 100.1)
+        let window = GoogleMeetSpeakerObservationProvider.CaptureWindow(id: 7, processID: 42, frame: snapshot.windowFrame)
+        var duplicate = window; duplicate.id = 8
+        XCTAssertNil(GoogleMeetSpeakerObservationProvider.captureWindowID(snapshot: snapshot, windows: [window, duplicate]))
+        XCTAssertNil(GoogleMeetSpeakerObservationProvider.captureWindowID(snapshot: snapshot, windows: []))
+        var taller = window; taller.frame.size.height += 40
+        XCTAssertNil(GoogleMeetSpeakerObservationProvider.captureWindowID(snapshot: snapshot, windows: [taller]))
+        var otherProcess = window; otherProcess.processID = 43
+        XCTAssertNil(GoogleMeetSpeakerObservationProvider.captureWindowID(snapshot: snapshot, windows: [otherProcess]))
+        var moved = window; moved.frame.origin.y += 10
+        XCTAssertNil(GoogleMeetSpeakerObservationProvider.captureWindowID(snapshot: snapshot, windows: [moved]))
+    }
+
     func testParticipantControlsAndNamesEstablishTilesWithoutPossessiveLabels() {
         XCTAssertEqual(MeetingParticipantTileResolver.name(ownLabels: ["Alice"], descendantLabels: ["More options for Alice"]), "Alice")
         XCTAssertEqual(MeetingParticipantTileResolver.name(ownLabels: [], descendantLabels: ["Alice", "Pin Alice to your main screen"]), "Alice")
@@ -139,5 +168,24 @@ final class MeetingSpeakerObservationTests: XCTestCase {
         let serialized = String(decoding: try JSONEncoder().encode(diagnostics), as: UTF8.self)
         XCTAssertFalse(serialized.contains("Alex"))
         XCTAssertFalse(serialized.contains("Bob"))
+    }
+
+    func testMissingSpeakerEvidenceIsDistinguishedFromDisabledAndSuccessfulCapture() {
+        var diagnostics = SpeakerObservationDiagnostics()
+        XCTAssertNil(diagnostics.missingSpeakerNamesExplanation)
+        diagnostics.record(.init(sourceKey: "meet", observations: [], reason: "layout", issue: .layoutUnavailable), interval: nil)
+        XCTAssertNotNil(diagnostics.missingSpeakerNamesExplanation)
+        diagnostics.record(batch(time: 100), interval: .init(participantReference: "alex", displayName: "Alex",
+            range: .init(start: 0, end: 0.5), uncertainty: 0.1, layoutEpoch: "grid"))
+        XCTAssertNil(diagnostics.missingSpeakerNamesExplanation)
+        var rememberingOnly = SpeakerObservationDiagnostics()
+        rememberingOnly.record(.init(sourceKey: "meet", observations: [], reason: nil), interval: nil, visual: false)
+        XCTAssertNil(rememberingOnly.missingSpeakerNamesExplanation)
+        var legacy = SpeakerObservationDiagnostics()
+        legacy.observations = 10
+        legacy.issues["noActiveSpeaker"] = 10
+        XCTAssertNil(legacy.missingSpeakerNamesExplanation)
+        legacy.issues["windowChanged"] = 1
+        XCTAssertNotNil(legacy.missingSpeakerNamesExplanation)
     }
 }

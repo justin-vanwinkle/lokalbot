@@ -57,6 +57,7 @@ private struct MeetingWorkspaceDetail: View {
     @State private var speakerIdentityState: MeetingSpeakerIdentityState?
     @State private var speakerProfiles: [SpeakerVoiceProfile] = []
     @State private var speakerIdentityNotice: String?
+    @State private var speakerObservationDiagnostics: SpeakerObservationDiagnostics?
     @State private var savingSpeakerIdentity = false
     @State private var speakerSummaryNeedsRefresh = false
     @State private var speakerNameHints: [String] = []
@@ -342,6 +343,37 @@ private struct MeetingWorkspaceDetail: View {
         }
         if let speakerIdentityNotice {
             Text(speakerIdentityNotice).font(.caption).foregroundStyle(.secondary)
+        }
+        if !calendarSpeakerCandidates.isEmpty, !unnamedRemoteSpeakers.isEmpty {
+            HStack {
+                Label("\(calendarSpeakerCandidates.count) calendar guests available as speaker suggestions", systemImage: "person.2")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Menu("Name speakers") {
+                    ForEach(unnamedRemoteSpeakers, id: \.self) { speaker in
+                        Button(transcript?.displaySpeaker(for: speaker) ?? speaker) { beginRenameSpeaker(speaker) }
+                    }
+                }
+                .controlSize(.small)
+                .accessibilityIdentifier("meeting.calendarSpeakerSuggestions")
+            }
+        }
+        if let explanation = speakerObservationDiagnostics?.missingSpeakerNamesExplanation,
+           let transcript, transcript.segments.contains(where: {
+               $0.resolvedAttribution.source == .system && transcript.speakerAliases[Transcript.canonicalSpeakerKey($0.speaker)] == nil
+           }) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("Speaker names weren’t captured", systemImage: "person.crop.circle.badge.questionmark")
+                        .font(.caption.weight(.medium))
+                    Text(explanation).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Button("Review speakers") { tab = .transcript; transcriptExpanded = true }
+                    .controlSize(.small)
+                    .accessibilityIdentifier("meeting.reviewSpeakers")
+            }
+            .accessibilityIdentifier("meeting.speakerCaptureUnavailable")
         }
         if let exportError {
             workspaceErrorLabel(
@@ -781,6 +813,9 @@ private struct MeetingWorkspaceDetail: View {
             defaultName: Transcript.defaultSpeakerName(for: speaker),
             currentName: transcript.displaySpeaker(for: speaker),
             currentCalendarIdentityID: transcript.calendarIdentityID(for: speaker),
+            sampleStart: transcript.segments.first(where: {
+                Transcript.canonicalSpeakerKey($0.speaker) == speaker && $0.end - $0.start >= 3
+            })?.start ?? transcript.segments.first(where: { Transcript.canonicalSpeakerKey($0.speaker) == speaker })?.start,
             canConfirmIdentity: transcript.canConfirmSpeaker(speaker),
             microphoneIsUser: transcript.speakerRoster[speaker]?.identity == .user
                 && transcript.segments.contains { Transcript.canonicalSpeakerKey($0.speaker) == speaker
@@ -789,6 +824,17 @@ private struct MeetingWorkspaceDetail: View {
 
     private var assignedCalendarIdentityIDs: Set<String> {
         Set(transcript?.speakerCalendarIdentityIDs.values.map { $0 } ?? [])
+    }
+
+    private var unnamedRemoteSpeakers: [String] {
+        guard let transcript else { return [] }
+        var seen = Set<String>()
+        return transcript.segments.compactMap { segment in
+            let speaker = Transcript.canonicalSpeakerKey(segment.speaker)
+            guard segment.resolvedAttribution.source == .system || speaker.hasPrefix("them"),
+                  transcript.speakerAliases[speaker] == nil, seen.insert(speaker).inserted else { return nil }
+            return speaker
+        }
     }
 
     private func calendarCandidates(
@@ -804,6 +850,7 @@ private struct MeetingWorkspaceDetail: View {
         guard FileManager.default.fileExists(atPath: sidecar.path)
                 || app.settings.identifySpeakersFromVisuals || app.settings.rememberSpeakersOnMac else { return }
         do {
+            speakerObservationDiagnostics = try await app.speakerIdentity.observationDiagnostics(for: meeting)
             speakerIdentityState = try await app.speakerIdentity.state(for: meeting)
             speakerProfiles = try await app.speakerIdentity.profiles()
             let latestChoice = speakerIdentityState?.decisions.filter {
@@ -1563,6 +1610,7 @@ private struct WorkspaceSpeakerRenameDraft: Identifiable {
     let defaultName: String
     let currentName: String
     let currentCalendarIdentityID: String?
+    var sampleStart: Double?
     var canConfirmIdentity = false
     var microphoneIsUser = false
 }
@@ -1629,25 +1677,27 @@ private struct WorkspaceSpeakerRenameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Rename Speaker").font(.headline)
+            HStack {
+                Text("Rename Speaker").font(.headline)
+                Spacer()
+                if let start = draft.sampleStart {
+                    Button("Play voice") { onPlay(start) }
+                        .accessibilityIdentifier("speaker.rename.playVoice")
+                }
+            }
             TextField("Speaker name", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("speaker.rename.name")
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-            SpeakerIdentityReview(speaker: draft.speaker, state: identityState,
-                profiles: profiles, rememberingEnabled: rememberingEnabled,
-                name: $name, remember: $remember, profileID: $profileID,
-                onPlay: onPlay, onAction: onAction, onDeleteEvidence: onDeleteEvidence,
-                canConfirmIdentity: draft.canConfirmIdentity, microphoneIsUser: draft.microphoneIsUser)
-            if let notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-
-
             if !calendarCandidates.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Calendar attendees")
+                    Text("Suggestions from calendar guests")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+
+                    Text("Play the voice, choose a guest, then save. Names marked From email are editable suggestions.")
+                        .font(.caption).foregroundStyle(.secondary)
 
                     ForEach(Array(calendarCandidates.enumerated()), id: \.element.id) { index, candidate in
                         calendarCandidateRow(candidate, index: index)
@@ -1663,6 +1713,13 @@ private struct WorkspaceSpeakerRenameSheet: View {
                     .quaternary.opacity(0.22),
                     in: RoundedRectangle(cornerRadius: 8))
             }
+
+            SpeakerIdentityReview(speaker: draft.speaker, state: identityState,
+                profiles: profiles, rememberingEnabled: rememberingEnabled,
+                name: $name, remember: $remember, profileID: $profileID,
+                onPlay: onPlay, onAction: onAction, onDeleteEvidence: onDeleteEvidence,
+                canConfirmIdentity: draft.canConfirmIdentity, microphoneIsUser: draft.microphoneIsUser)
+            if let notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
 
             if !otherHints.isEmpty {
                 Text("Other suggestions")
@@ -1691,6 +1748,7 @@ private struct WorkspaceSpeakerRenameSheet: View {
                 Spacer()
                 Button("Cancel", action: onCancel)
                 Button("Save") { onSave(name, selectedCalendarIdentityID, remember, profileID) }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("speaker.rename.save")
             }
@@ -1705,7 +1763,7 @@ private struct WorkspaceSpeakerRenameSheet: View {
     }
 
     private var otherHints: [String] {
-        let calendarNames = Set(calendarCandidates.compactMap(\.name).map(normalizedName))
+        let calendarNames = Set(calendarCandidates.compactMap(\.suggestedSpeakerName).map(normalizedName))
         return hints.filter { !calendarNames.contains(normalizedName($0)) }
     }
 
@@ -1721,12 +1779,21 @@ private struct WorkspaceSpeakerRenameSheet: View {
         return Button {
             selectCalendarCandidate(candidate)
         } label: {
-            Label(
-                label,
-                systemImage: selectedCalendarIdentityID == candidate.id
-                    ? "checkmark.circle.fill"
-                    : "person.crop.circle")
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Label(candidate.suggestedSpeakerName ?? "Enter a name for this guest",
+                        systemImage: selectedCalendarIdentityID == candidate.id ? "checkmark.circle.fill" : "person.crop.circle")
+                    Spacer()
+                    if candidate.name == nil, candidate.suggestedSpeakerName != nil {
+                        Text("From email").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if let email = candidate.emailAddress {
+                    Text(email).font(.caption).foregroundStyle(.secondary)
+                }
+                if assignedElsewhere { Text("Also assigned to another voice").font(.caption).foregroundStyle(.secondary) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         // A standard SwiftUI bordered button supplies the native AXButton
         // role. Custom plain labels and NSViewRepresentable roots can be
@@ -1734,12 +1801,14 @@ private struct WorkspaceSpeakerRenameSheet: View {
         .buttonStyle(.bordered)
         .tint(selectedCalendarIdentityID == candidate.id ? .accentColor : nil)
         .help(assignedElsewhere ? "Also assign this attendee to this speaker" : "Assign this attendee")
+        .accessibilityLabel(label)
         .accessibilityIdentifier("speaker.rename.calendarCandidate.\(index)")
     }
 
     private func selectCalendarCandidate(_ candidate: CalendarParticipantIdentity) {
         selectedCalendarIdentityID = candidate.id
-        name = candidate.name ?? ""
+        profileID = nil
+        name = candidate.suggestedSpeakerName ?? ""
     }
 
     private func calendarCandidateAccessibilityLabel(
@@ -1747,8 +1816,9 @@ private struct WorkspaceSpeakerRenameSheet: View {
         assignedElsewhere: Bool
     ) -> String {
         [
-            candidate.name ?? "Name unavailable",
+            candidate.suggestedSpeakerName ?? "Enter a name for this guest",
             candidate.emailAddress,
+            candidate.name == nil && candidate.suggestedSpeakerName != nil ? "Name suggested from email" : nil,
             assignedElsewhere ? "Assigned" : nil,
         ]
         .compactMap { $0 }

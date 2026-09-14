@@ -91,7 +91,7 @@ struct SpeakerObservationAccumulator {
                         }
                         if let reason = batch.reason { state = .paused(reason) } else { state = .observing }
                         let interval = config.identifySpeakersFromVisuals ? accumulator.consume(batch, clock: clock) : nil
-                        diagnostics.record(batch, interval: interval)
+                        diagnostics.record(batch, interval: interval, visual: config.identifySpeakersFromVisuals)
                         if let interval {
                             if let last = buffer.last, last.participantReference == interval.participantReference,
                                last.layoutEpoch == interval.layoutEpoch, interval.range.start - last.range.end < 0.25 {

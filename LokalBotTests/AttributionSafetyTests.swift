@@ -304,6 +304,7 @@ final class AttributionSafetyTests: XCTestCase {
         XCTAssertEqual(result.transcript.segments[0].resolvedAttribution.identity, .user)
         XCTAssertEqual(result.transcript.segments[0].resolvedAttribution.method, .legacy)
         XCTAssertTrue(result.transcript.canConfirmSpeaker("me"))
+        XCTAssertEqual(result.acousticCandidateIndices, [0])
     }
 
     func testMicrophoneDefaultStillAllowsProvenEchoRemovalButExplicitConfirmationWins() {
@@ -321,6 +322,37 @@ final class AttributionSafetyTests: XCTestCase {
         let confirmed = SpeakerBleedFilter.filter(source, acousticallyVerifiedIndices: [0])
         XCTAssertEqual(confirmed.removedSegments, 0)
         XCTAssertEqual(confirmed.transcript.segments, source.segments)
+        XCTAssertTrue(confirmed.acousticCandidateIndices.isEmpty)
+    }
+
+    func testDefaultMicrophoneEchoReachesTheWaveformCheckThroughTheProductionPath() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var state: UInt64 = 23
+        let audio: [Float] = (0..<32_000).map { index in
+            state = state &* 6_364_136_223_846_793_005 &+ 1
+            return Float(Int64(bitPattern: state) % 10_000) / 10_000 * Float(0.2 + 0.15 * sin(Double(index) / 900))
+        }
+        for track in [MeetingAudioFiles.Track.mic, .system] {
+            let writer = try WavWriter(url: MeetingAudioFiles.recoveryURL(for: track, in: folder), sampleRate: 16_000)
+            try writer.append(track == .mic ? audio.map { $0 * 0.5 } : audio)
+            try writer.finish()
+        }
+        let text = "we will send the final report"
+        var source = Transcript(segments: [
+            .init(start: 0, end: 2, speaker: "local 1", text: text, timingPrecision: .span,
+                  attribution: .init(source: .microphone, identity: .user, method: .diarization)),
+            .init(start: 0, end: 2, speaker: "them 1", text: text, timingPrecision: .span,
+                  attribution: .init(source: .system, identity: .other, method: .diarization))
+        ], engine: "fixture")
+        let verified = try await EchoWaveformEvidence.verified(in: source, folder: folder)
+        XCTAssertEqual(verified, [0])
+        XCTAssertEqual(SpeakerBleedFilter.filter(source, acousticallyVerifiedIndices: verified).transcript.segments.map(\.speaker), ["them 1"])
+
+        source.confirmSpeaker("local 1", isUser: true)
+        let confirmed = try await EchoWaveformEvidence.verified(in: source, folder: folder)
+        XCTAssertTrue(confirmed.isEmpty)
     }
 
     func testMicrophoneCommitmentDefaultsToUserAcrossEchoModesAndPersistence() throws {

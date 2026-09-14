@@ -4,7 +4,7 @@ import Foundation
 /// are handled by AEC; lexical similarity cannot authorize deleting speech.
 enum EchoWaveformEvidence {
     static func verified(in transcript: Transcript, folder: URL) async throws -> Set<Int> {
-        let indices = SpeakerBleedFilter.filter(transcript).suspectedIndices.sorted().prefix(100)
+        let indices = SpeakerBleedFilter.filter(transcript).acousticCandidateIndices.sorted().prefix(100)
         guard !indices.isEmpty else { return [] }
         let worker = Task.detached(priority: .utility) { () -> Set<Int> in
             guard let micURL = MeetingAudioFiles.transcribableURL(for: .mic, in: folder),

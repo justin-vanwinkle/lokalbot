@@ -89,5 +89,7 @@ final class SpeakerAutoNamerTests: XCTestCase {
 
         XCTAssertTrue(result.speakerAliases.isEmpty)
         XCTAssertFalse(result.markdown.contains("ana@example.com"))
+        XCTAssertEqual(attendee.suggestedSpeakerName, "Ana")
+        XCTAssertFalse(result.markdown.contains("Ana"))
     }
 }

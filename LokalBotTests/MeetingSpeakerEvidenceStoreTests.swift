@@ -48,7 +48,11 @@ import XCTest
         let evidence = try await reopened.evidence(meeting: meeting, retentionDays: 14)
         XCTAssertEqual(evidence?.intervals.count, 0)
         XCTAssertEqual(evidence?.diagnostics, diagnostics)
+        let status = try await reopened.observationDiagnostics(meeting: meeting, retentionDays: 14)
+        XCTAssertEqual(status, diagnostics)
         try await store.eraseEvidence(meeting: meeting)
+        let deletedStatus = try await reopened.observationDiagnostics(meeting: meeting, retentionDays: 14)
+        XCTAssertNil(deletedStatus)
         do {
             try await store.recordDiagnostics(diagnostics, meeting: meeting, generation: generation)
             XCTFail("Diagnostics resurrected deleted evidence")

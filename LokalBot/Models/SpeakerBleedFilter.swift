@@ -15,6 +15,9 @@ enum SpeakerBleedFilter {
         var removedSegments: Int
         var removedWords: Int
         var suspectedIndices: Set<Int> = []
+        /// Whole-span lexical matches eligible for an independent audio check.
+        /// A microphone's default user identity must not hide these candidates.
+        var acousticCandidateIndices: Set<Int> = []
 
         var changed: Bool { removedSegments > 0 || !suspectedIndices.isEmpty }
     }
@@ -69,6 +72,7 @@ enum SpeakerBleedFilter {
         var removedSegments = 0
         var removedWords = 0
         var suspectedIndices = Set<Int>()
+        var acousticCandidateIndices = Set<Int>()
 
         for (index, segment) in transcript.segments.enumerated() {
             guard segment.resolvedAttribution.source == .microphone || canonical(segment.speaker) == "me",
@@ -77,6 +81,9 @@ enum SpeakerBleedFilter {
                   hasMatchingRemote(segment: segment, tokens: tokens, remote: remote) else {
                 kept.append(segment)
                 continue
+            }
+            if !segment.resolvedAttribution.isConfirmedUser {
+                acousticCandidateIndices.insert(index)
             }
             // A genuine repetition can have identical words and timing.
             // Preserve it unless the waveform independently supports removal.
@@ -96,13 +103,15 @@ enum SpeakerBleedFilter {
         }
 
         guard removedSegments > 0 || !suspectedIndices.isEmpty else {
-            return Result(transcript: transcript, removedSegments: 0, removedWords: 0)
+            return Result(transcript: transcript, removedSegments: 0, removedWords: 0,
+                          acousticCandidateIndices: acousticCandidateIndices)
         }
         var cleaned = transcript
         cleaned.segments = kept
         return Result(transcript: cleaned,
                       removedSegments: removedSegments,
-                      removedWords: removedWords, suspectedIndices: suspectedIndices)
+                      removedWords: removedWords, suspectedIndices: suspectedIndices,
+                      acousticCandidateIndices: acousticCandidateIndices)
     }
 
     private static func hasMatchingRemote(

@@ -111,16 +111,28 @@ actor MeetingSpeakerEvidenceStore {
         try write(session, at: url)
     }
 
-    func evidence(meeting: Meeting, retentionDays: Int) throws -> MeetingSpeakerEvidenceSession? {
+    private func retainedSession(meeting: Meeting, retentionDays: Int) throws -> MeetingSpeakerEvidenceSession? {
         try checkMeeting(meeting)
         guard sessions[meeting.id] == nil else { return nil }
         let folder = evidenceFolder(meeting)
-        guard var session = try read(MeetingSpeakerEvidenceSession.self, at: folder.appendingPathComponent("session.sealed")) else { return nil }
+        guard let session = try read(MeetingSpeakerEvidenceSession.self, at: folder.appendingPathComponent("session.sealed")),
+              session.meetingID == meeting.id else { return nil }
         if session.openedAt < Date().addingTimeInterval(-Double(max(0, retentionDays)) * 86_400) {
             try eraseEvidence(meeting: meeting)
             return nil
         }
-        guard session.meetingID == meeting.id, !session.failed else { return nil }
+        return session
+    }
+
+    /// Read only the bounded session header. Opening a meeting's status should
+    /// not decode all private visual intervals and clock chunks.
+    func observationDiagnostics(meeting: Meeting, retentionDays: Int) throws -> SpeakerObservationDiagnostics? {
+        try retainedSession(meeting: meeting, retentionDays: retentionDays)?.diagnostics
+    }
+
+    func evidence(meeting: Meeting, retentionDays: Int) throws -> MeetingSpeakerEvidenceSession? {
+        guard var session = try retainedSession(meeting: meeting, retentionDays: retentionDays), !session.failed else { return nil }
+        let folder = evidenceFolder(meeting)
         // After an interrupted recording only authenticated, completed chunks
         // survive. There is no inferred interval from its last observation to stop.
         let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
