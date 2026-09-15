@@ -1208,6 +1208,110 @@ kbd {
 }
 
 /* =========================================================================
+   homepage — product examples first; other pages keep their existing layout
+   ========================================================================= */
+.home .home-hero {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(32px, 4vw, 64px);
+  min-height: 0;
+  padding-top: 64px;
+  padding-bottom: 72px;
+  text-align: left;
+}
+.home .hero__title {
+  max-width: 10ch;
+  font-size: clamp(3.1rem, 5.5vw, 4.75rem);
+  line-height: 1.02;
+}
+.home .hero__sub { max-width: 40ch; font-size: 1.08rem; }
+.home .hero__cta { gap: 12px; margin-top: 28px; justify-content: flex-start; }
+.home .hero__meta { margin-top: 20px; }
+.home-requirements { margin-top: 6px; color: var(--text-faint); font-size: 0.85rem; }
+.home-recall, .home-shot, .home-demo__video { margin: 0; min-width: 0; }
+.home-image-link {
+  display: block;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 22px 60px -24px rgba(0, 0, 0, 0.65);
+}
+.home-image-link img { display: block; width: 100%; height: auto; border-radius: inherit; }
+.home figcaption { margin-top: 12px; color: var(--text-faint); font-size: 0.84rem; line-height: 1.5; }
+.home .section { padding-top: 64px; padding-bottom: 64px; }
+.home .section__head { margin-bottom: 28px; }
+.home .home-examples { padding-top: 0; padding-bottom: 24px; }
+.home-example {
+  display: grid;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: center;
+  padding: 56px 0;
+  border-top: 1px solid var(--line-strong);
+}
+.home-example__copy .section__title { margin-bottom: 20px; }
+.home-example__copy > p:not(.eyebrow) { color: var(--text-dim); max-width: 40ch; }
+.home-example__detail { margin-top: 18px; font-size: 0.92rem; }
+.home-shot--recall { width: 100%; max-width: 560px; justify-self: end; }
+.home-text-link { display: inline-flex; gap: 8px; align-items: center; margin-top: 24px; color: var(--teal-bright); }
+.home-demo-note { margin: 0; color: var(--text-faint); font-size: 0.84rem; }
+.home-writing__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.home-writing__grid .tile { padding: 28px; }
+.home .home-demo { max-width: 1000px; }
+.home-demo__video .hero__demo { aspect-ratio: 16 / 9; object-fit: contain; }
+.home-demo__video figcaption a { color: var(--teal-bright); text-decoration: underline; text-underline-offset: 3px; }
+.home .home-privacy {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: start;
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+}
+.home-privacy__heading .section__title { max-width: 16ch; }
+.home-privacy__copy > p { color: var(--text-dim); }
+.home-privacy__copy > p + p { margin-top: 20px; }
+.home-privacy__links { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-top: 24px; font-size: 0.92rem; }
+.home-privacy__links a, .home-download__help a, .home .qa a { color: var(--teal-bright); }
+.home-text-link:hover, .home-privacy__links a:hover, .home-download__help a:hover, .home .qa a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.home .download__panel { max-width: 900px; padding: 40px 28px; }
+.home .download__icon { width: 64px; height: 64px; margin-bottom: 20px; }
+.home-download__setup { margin-top: 24px; color: var(--text-dim); font-size: 0.94rem; line-height: 1.8; }
+.home-download__help { margin-top: 16px; color: var(--text-faint); font-size: 0.92rem; }
+.home .home-faq { display: grid; grid-template-columns: minmax(0, 0.55fr) minmax(0, 1fr); gap: 48px; padding-top: 16px; }
+.home .home-faq .section__head { margin: 0; }
+.home .qa summary { padding-top: 20px; padding-bottom: 20px; }
+
+@media (max-width: 880px) {
+  .home .home-hero { grid-template-columns: 1fr; gap: 32px; padding-top: 40px; }
+  .home .hero__title { max-width: 13ch; }
+  .home .hero__sub { max-width: 50ch; }
+  .home-recall { width: 100%; max-width: 660px; }
+  .home-example { grid-template-columns: 1fr; gap: 28px; padding: 40px 0; }
+  .home-example__copy > p:not(.eyebrow) { max-width: 60ch; }
+  .home-shot--recall { max-width: 660px; justify-self: start; }
+  .home-writing__grid { grid-template-columns: 1fr; }
+  .home .home-privacy, .home .home-faq { grid-template-columns: 1fr; gap: 28px; }
+}
+@media (max-width: 600px) {
+  .home .home-hero { padding-top: 32px; padding-bottom: 44px; }
+  .home .hero__title { font-size: clamp(2.8rem, 11vw, 3.7rem); }
+  .home .hero__sub { font-size: 1rem; margin-top: 18px; }
+  .home .hero__cta { margin-top: 24px; }
+  .home .section { padding-top: 40px; padding-bottom: 40px; }
+  .home .home-examples { padding-top: 0; padding-bottom: 0; }
+  .home .home-faq { padding-top: 0; }
+  .home .faq__list { padding: 4px 16px; }
+  .home .qa summary { font-size: 1rem; }
+  .home .nav { gap: 10px; padding: 0 12px; }
+  .home .nav .brand { gap: 8px; }
+  .home .nav .brand__mark { width: 26px; height: 26px; }
+  .home .nav .brand__name { font-size: 0.94rem; }
+  .home .nav__actions { margin-left: auto; }
+  .home .nav__actions .icon-link { display: none; }
+  .home .nav .btn { padding: 10px 14px; font-size: 0.85rem; }
+}
+
+/* =========================================================================
    accessibility fallbacks
    ========================================================================= */
 @media (prefers-reduced-motion: reduce) {
@@ -1223,6 +1327,7 @@ kbd {
 /* If the browser can't frost (or the user prefers less transparency),
    fall back to solid surfaces so contrast and depth survive. */
 @media (prefers-reduced-transparency: reduce) {
+  .home-image-link { background: var(--surface); }
   .nav, .proof, .tile, .memory-pillar, .memory__boundary, .cotype, .appcard, .download__panel, .hero__diagram,
   .faq__list, .compare-wrap, .pick, .guide-article, .guide-card, .btn--ghost, .icon-link, .step__num,
   .recorder, .track, .tile__tags li, kbd {
@@ -1233,6 +1338,7 @@ kbd {
   .bg-refract { display: none; }
 }
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .home-image-link { background: var(--surface); }
   .nav, .proof, .tile, .memory-pillar, .memory__boundary, .cotype, .appcard, .download__panel, .hero__diagram, .faq__list,
   .compare-wrap, .pick, .guide-article, .guide-card {
     background: var(--surface);
