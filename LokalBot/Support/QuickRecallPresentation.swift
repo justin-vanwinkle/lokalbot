@@ -1,0 +1,60 @@
+import AppKit
+
+@MainActor
+enum QuickRecallApplicationIconResolver {
+    private static let cache = NSCache<NSString, NSImage>()
+    private static var missing: Set<String> = []
+
+    static func icon(for appName: String) -> NSImage? {
+        let key = appName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return nil }
+        if let cached = cache.object(forKey: key as NSString) { return cached }
+        guard !missing.contains(key) else { return nil }
+
+        if let icon = NSWorkspace.shared.runningApplications.first(where: {
+            $0.localizedName?.localizedCaseInsensitiveCompare(key) == .orderedSame
+        })?.icon {
+            cache.setObject(icon, forKey: key as NSString)
+            return icon
+        }
+
+        let name = key.hasSuffix(".app") ? String(key.dropLast(4)) : key
+        let roots = [
+            URL(fileURLWithPath: "/Applications", isDirectory: true),
+            URL(fileURLWithPath: "/System/Applications", isDirectory: true),
+            URL(fileURLWithPath: "/System/Applications/Utilities", isDirectory: true),
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Applications", isDirectory: true),
+        ]
+        for root in roots {
+            let applicationURL = root.appendingPathComponent(name).appendingPathExtension("app")
+            guard FileManager.default.fileExists(atPath: applicationURL.path) else { continue }
+            let icon = NSWorkspace.shared.icon(forFile: applicationURL.path)
+            cache.setObject(icon, forKey: key as NSString)
+            return icon
+        }
+        missing.insert(key)
+        return nil
+    }
+}
+
+enum QuickRecallDateLabel {
+    static func string(for date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let time = date.formatted(date: .omitted, time: .shortened)
+        let dateDay = calendar.startOfDay(for: date)
+        let today = calendar.startOfDay(for: now)
+        let distance = calendar.dateComponents([.day], from: dateDay, to: today).day ?? .max
+        let day: String
+        switch distance {
+        case 0:
+            day = "Today"
+        case 1:
+            day = "Yesterday"
+        case 2...6:
+            day = date.formatted(.dateTime.weekday(.abbreviated))
+        default:
+            day = date.formatted(.dateTime.day().month(.abbreviated))
+        }
+        return "\(day) · \(time)"
+    }
+}
